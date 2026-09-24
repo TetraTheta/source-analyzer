@@ -18,19 +18,22 @@ cargo build --release
 ## Usage
 
 ```console
-source-analyzer map <BSP> --gameinfo <gameinfo.txt> [OPTIONS]
-source-analyzer model <MDL> --gameinfo <gameinfo.txt> [OPTIONS]
+source-analyzer map <BSP> [OPTIONS]
+source-analyzer model <MDL> [OPTIONS]
 ```
 
 Options shared by both commands:
 
-- `-g, --gameinfo <PATH>`: path to `gameinfo.txt`.
+- `-p, --profile [NAME]`: load `NAME` from `source-analyzer.toml` next to the
+  executable. When omitted, `preset.default` is used.
+- `-g, --gameinfo <PATH>`: path to `gameinfo.txt`. Required unless supplied by
+  the selected profile.
 - `--base-dir <PATH>`: directory used for unprefixed and
   `|all_source_engine_paths|` entries. By default this is inferred as the parent
   of the directory containing `gameinfo.txt`.
-- `-m, --missing`: print missing dependencies only.
-- `-p, --present`: print present and BSP-embedded dependencies only.
-- `-a, --all`: print all dependencies. This is the default.
+- `--missing`: print missing dependencies only.
+- `--present`: print present and BSP-embedded dependencies only.
+- `--all`: print all dependencies. This is the default.
 - `-v, --verbose`: print mount and analysis progress to stderr.
 
 Example:
@@ -40,6 +43,23 @@ source-analyzer map maps/example.bsp \
   --gameinfo /path/to/game/gameinfo.txt \
   --all
 ```
+
+Profile paths are relative to `source-analyzer.toml`. Command-line options take
+precedence over profile values.
+
+```toml
+[preset]
+default = "ez2"
+
+[preset.ez2]
+gameinfo = "../EntropyZero2/ez2/gameinfo.txt"
+type = "all"
+verbose = true
+```
+
+With this file next to the executable, `source-analyzer map test.bsp -p` loads
+the `ez2` profile. Use `-p ez2` to select it explicitly. `type` accepts `all`,
+`missing`, or `present`; profiles may also set `base_dir`.
 
 ## Resolution rules
 
