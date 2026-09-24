@@ -1,6 +1,7 @@
 mod analysis;
 mod bsp;
 mod model;
+mod output;
 mod source_fs;
 
 use std::{
@@ -77,7 +78,7 @@ struct Options {
 
 fn main() {
   if let Err(error) = run() {
-    eprintln!("error: {error:#}");
+    output::error(format_args!("{error:#}"));
     std::process::exit(1);
   }
 }

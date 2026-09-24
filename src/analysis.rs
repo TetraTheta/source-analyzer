@@ -2,10 +2,13 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
+use anstream::println;
+use anstyle::Style;
 use anyhow::{Context, Result};
 
 use crate::bsp;
 use crate::model;
+use crate::output;
 use crate::source_fs::{AssetStatus, SourceFs, normalize_resource};
 
 #[derive(Debug, Clone, Copy)]
@@ -58,7 +61,7 @@ pub fn analyze_map(path: &Path, source_fs: &mut SourceFs, verbose: bool) -> Resu
     report.push(dependency);
     let Some(resolved) = resolved else {
       if verbose {
-        eprintln!("Skipping material analysis for missing model: {model_path}");
+        output::warning(format_args!("Skipping material analysis for missing model: {model_path}"));
       }
       continue;
     };
@@ -120,8 +123,9 @@ pub fn print_report(dependencies: &[Dependency], selection: Selection) {
       }
       print_banner(status, kind);
       for dependency in group {
+        let style = status_style(status);
         let source = dependency.source.as_ref().map(|source| format!("  [{source}]")).unwrap_or_default();
-        println!("[{:8}] [{:8}] {}{}", status_name(status), type_name(kind), dependency.path, source);
+        println!("[{style}{:8}{style:#}] [{:8}] {}{}", status_name(status), type_name(kind), dependency.path, source);
       }
       println!();
     }
@@ -139,7 +143,16 @@ fn selection_allows(selection: Selection, status: AssetStatus) -> bool {
 fn print_banner(status: AssetStatus, kind: ResourceKind) {
   let title = format!("{} {}", status_name(status), category_name(kind));
   let border = "#".repeat(title.len() + 6);
-  println!("{border}\n#  {title}  #\n{border}\n");
+  let style = status_style(status);
+  println!("{style}{border}\n#  {title}  #\n{border}{style:#}\n");
+}
+
+fn status_style(status: AssetStatus) -> Style {
+  match status {
+    AssetStatus::Missing => output::ERROR,
+    AssetStatus::Embedded => output::EMBEDDED,
+    AssetStatus::Present => output::PRESENT,
+  }
 }
 
 fn status_name(status: AssetStatus) -> &'static str {
@@ -171,7 +184,8 @@ fn type_name(kind: ResourceKind) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-  use super::{Selection, selection_allows};
+  use super::{Selection, selection_allows, status_style};
+  use crate::output;
   use crate::source_fs::AssetStatus;
 
   #[test]
@@ -179,5 +193,12 @@ mod tests {
     assert!(selection_allows(Selection::Present, AssetStatus::Present));
     assert!(selection_allows(Selection::Present, AssetStatus::Embedded));
     assert!(!selection_allows(Selection::Present, AssetStatus::Missing));
+  }
+
+  #[test]
+  fn report_status_colors_follow_severity() {
+    assert_eq!(status_style(AssetStatus::Missing), output::ERROR);
+    assert_eq!(status_style(AssetStatus::Embedded), output::EMBEDDED);
+    assert_eq!(status_style(AssetStatus::Present), output::PRESENT);
   }
 }

@@ -8,6 +8,8 @@ use kva::{KvEntry, text::Parser};
 use source_vpk::Vpk;
 use zip::ZipArchive;
 
+use crate::output;
+
 const MAX_ASSET_SIZE: u64 = 512 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -63,7 +65,7 @@ impl SourceFs {
     } else {
       inferred_base = gameinfo_dir.parent().context("cannot infer Source base directory; pass --base-dir")?.to_path_buf();
       if verbose {
-        eprintln!("Using inferred Source base directory: {}", inferred_base.display());
+        output::info(format_args!("Using inferred Source base directory: {}", inferred_base.display()));
       }
       &inferred_base
     };
@@ -83,7 +85,7 @@ impl SourceFs {
           let key = path_key(&candidate);
           if seen.insert(key) {
             if verbose {
-              eprintln!("Mounted loose path: {}", candidate.display());
+              output::info(format_args!("Mounted loose path: {}", candidate.display()));
             }
             roots.push(SearchRoot::Loose(candidate));
           }
@@ -92,7 +94,7 @@ impl SourceFs {
 
         let Some(vpk_path) = resolve_vpk_path(&candidate) else {
           if verbose {
-            eprintln!("Skipping missing search path: {}", candidate.display());
+            output::warning(format_args!("Skipping missing search path: {}", candidate.display()));
           }
           continue;
         };
@@ -100,7 +102,7 @@ impl SourceFs {
         let actual_path = archive.path().to_path_buf();
         if seen.insert(path_key(&actual_path)) {
           if verbose {
-            eprintln!("Mounted VPK: {} ({} entries)", actual_path.display(), archive.len());
+            output::info(format_args!("Mounted VPK: {} ({} entries)", actual_path.display(), archive.len()));
           }
           roots.push(SearchRoot::Vpk { path: actual_path, archive: Box::new(archive) });
         }
@@ -123,7 +125,7 @@ impl SourceFs {
       }
     }
     if self.verbose {
-      eprintln!("Mounted BSP pakfile: {} entries", names.len());
+      output::info(format_args!("Mounted BSP pakfile: {} entries", names.len()));
     }
     self.embedded = Some(EmbeddedPak { bytes, names });
     Ok(())
