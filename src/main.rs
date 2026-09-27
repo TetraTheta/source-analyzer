@@ -59,6 +59,10 @@ struct Options {
   #[arg(long)]
   base_dir: Option<PathBuf>,
 
+  /// Additional Source engine base directory. May be repeated.
+  #[arg(short = 'B', long)]
+  extra_base_dir: Vec<PathBuf>,
+
   /// Print only missing dependencies.
   #[arg(long)]
   missing: bool,
@@ -89,14 +93,14 @@ fn run() -> Result<()> {
     Command::Map { bsp, mut options } => {
       resolve_profile(&mut options)?;
       let gameinfo = options.gameinfo.as_deref().context("--gameinfo is required unless the selected profile provides it")?;
-      let mut source_fs = SourceFs::from_gameinfo(gameinfo, options.base_dir.as_deref(), options.verbose)?;
+      let mut source_fs = SourceFs::from_gameinfo(gameinfo, options.base_dir.as_deref(), &options.extra_base_dir, options.verbose)?;
       let report = analyze_map(&bsp, &mut source_fs, options.verbose)?;
       print_report(&report, selection(&options));
     },
     Command::Model { mdl, mut options } => {
       resolve_profile(&mut options)?;
       let gameinfo = options.gameinfo.as_deref().context("--gameinfo is required unless the selected profile provides it")?;
-      let source_fs = SourceFs::from_gameinfo(gameinfo, options.base_dir.as_deref(), options.verbose)?;
+      let source_fs = SourceFs::from_gameinfo(gameinfo, options.base_dir.as_deref(), &options.extra_base_dir, options.verbose)?;
       let report = analyze_model_file(&mdl, &source_fs)?;
       print_report(&report, selection(&options));
     },
@@ -133,6 +137,16 @@ fn apply_profile(config: &toml::Table, requested: &str, config_dir: &Path, optio
     && let Some(path) = profile.get("base_dir").and_then(toml::Value::as_str).filter(|path| !path.is_empty())
   {
     options.base_dir = Some(resolve_config_path(config_dir, path));
+  }
+  if options.extra_base_dir.is_empty()
+    && let Some(paths) = profile.get("extra_base_dirs")
+  {
+    let paths = paths.as_array().with_context(|| format!("profile '{name}' extra_base_dirs must be an array"))?;
+    for path in paths {
+      let path =
+        path.as_str().filter(|path| !path.is_empty()).with_context(|| format!("profile '{name}' extra_base_dirs must contain non-empty strings"))?;
+      options.extra_base_dir.push(resolve_config_path(config_dir, path));
+    }
   }
   options.verbose |= profile.get("verbose").and_then(toml::Value::as_bool).unwrap_or(false);
 
@@ -180,6 +194,7 @@ default = "ez2"
 
 [preset.ez2]
 gameinfo = "game/ez2/gameinfo.txt"
+extra_base_dirs = ["addons/map", "shared"]
 type = "missing"
 verbose = true
 "#
@@ -190,7 +205,28 @@ verbose = true
     apply_profile(&config, &requested, Path::new("config"), &mut options).expect("profile should apply");
 
     assert_eq!(options.gameinfo, Some(PathBuf::from("cli/gameinfo.txt")));
+    assert_eq!(options.extra_base_dir, [PathBuf::from("config/addons/map"), PathBuf::from("config/shared")]);
     assert!(options.missing);
     assert!(options.verbose);
+  }
+
+  #[test]
+  fn repeated_cli_extra_base_dirs_override_profile() {
+    let cli = Cli::try_parse_from(["source-analyzer", "model", "test.mdl", "-p", "ez2", "-B", "cli/addon-one", "--extra-base-dir", "cli/addon-two"])
+      .expect("CLI should parse");
+    let Command::Model { mut options, .. } = cli.command else { unreachable!() };
+    let config = r#"
+[preset]
+
+[preset.ez2]
+extra_base_dirs = ["profile/addon"]
+"#
+    .parse::<toml::Table>()
+    .expect("TOML should parse");
+
+    let requested = options.profile.take().expect("profile flag");
+    apply_profile(&config, &requested, Path::new("config"), &mut options).expect("profile should apply");
+
+    assert_eq!(options.extra_base_dir, [PathBuf::from("cli/addon-one"), PathBuf::from("cli/addon-two")]);
   }
 }

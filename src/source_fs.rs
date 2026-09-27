@@ -53,7 +53,7 @@ pub struct SourceFs {
 }
 
 impl SourceFs {
-  pub fn from_gameinfo(gameinfo_path: &Path, base_dir: Option<&Path>, verbose: bool) -> Result<Self> {
+  pub fn from_gameinfo(gameinfo_path: &Path, base_dir: Option<&Path>, extra_base_dirs: &[PathBuf], verbose: bool) -> Result<Self> {
     let text = fs::read_to_string(gameinfo_path).with_context(|| format!("failed to read {}", gameinfo_path.display()))?;
     let root = Parser::new(&text).numeric_inference(false).parse().context("failed to parse gameinfo.txt as Valve KeyValues1")?;
     let file_system = find_compound(&root, "FileSystem")?;
@@ -79,7 +79,7 @@ impl SourceFs {
       let Some(value) = entry.data.as_str() else {
         continue;
       };
-      let candidates = resolve_search_path(value, gameinfo_dir, base_dir)?;
+      let candidates = resolve_search_paths(value, gameinfo_dir, base_dir, extra_base_dirs)?;
       for candidate in candidates {
         if candidate.is_dir() {
           let key = path_key(&candidate);
@@ -227,6 +227,19 @@ fn resolve_search_path(value: &str, gameinfo_dir: &Path, base_dir: &Path) -> Res
   expand_wildcards(base, relative)
 }
 
+fn resolve_search_paths(value: &str, gameinfo_dir: &Path, base_dir: &Path, extra_base_dirs: &[PathBuf]) -> Result<Vec<PathBuf>> {
+  const GAMEINFO: &str = "|gameinfo_path|";
+  if starts_with_ignore_ascii_case(value, GAMEINFO) {
+    return resolve_search_path(value, gameinfo_dir, base_dir);
+  }
+
+  let mut candidates = resolve_search_path(value, gameinfo_dir, base_dir)?;
+  for extra_base_dir in extra_base_dirs {
+    candidates.extend(resolve_search_path(value, gameinfo_dir, extra_base_dir)?);
+  }
+  Ok(candidates)
+}
+
 fn expand_wildcards(base: &Path, relative: &str) -> Result<Vec<PathBuf>> {
   let components: Vec<_> =
     relative.trim_start_matches(['/', '\\']).split(['/', '\\']).filter(|component| !component.is_empty() && *component != ".").collect();
@@ -315,12 +328,28 @@ fn path_key(path: &Path) -> String {
 
 #[cfg(test)]
 mod tests {
-  use super::wildcard_matches;
+  use std::fs;
+
+  use super::{resolve_search_paths, wildcard_matches};
 
   #[test]
   fn wildcard_matching_is_case_insensitive() {
     assert!(wildcard_matches("*.VPK", "pak01_dir.vpk"));
     assert!(wildcard_matches("addon_?", "ADDON_1"));
     assert!(!wildcard_matches("*.vpk", "materials"));
+  }
+
+  #[test]
+  fn search_paths_use_primary_then_extra_base_dirs() {
+    let temp = std::env::temp_dir().join(format!("source-analyzer-{}", std::process::id()));
+    let primary = temp.join("primary");
+    let extra = temp.join("extra");
+    fs::create_dir_all(primary.join("game")).expect("primary search path should be created");
+    fs::create_dir_all(extra.join("game")).expect("extra search path should be created");
+
+    let paths = resolve_search_paths("game", &temp, &primary, std::slice::from_ref(&extra)).expect("search paths should resolve");
+
+    assert_eq!(paths, [primary.join("game"), extra.join("game")]);
+    fs::remove_dir_all(&temp).expect("temporary search paths should be removed");
   }
 }

@@ -31,6 +31,8 @@ Options shared by both commands:
 - `--base-dir <PATH>`: directory used for unprefixed and
   `|all_source_engine_paths|` entries. By default this is inferred as the parent
   of the directory containing `gameinfo.txt`.
+- `-B, --extra-base-dir <PATH>`: additional directory used to resolve those same
+  entries after the primary base directory. May be repeated.
 - `--missing`: print missing dependencies only.
 - `--present`: print present and BSP-embedded dependencies only.
 - `--all`: print all dependencies. This is the default.
@@ -53,13 +55,15 @@ default = "ez2"
 
 [preset.ez2]
 gameinfo = "../EntropyZero2/ez2/gameinfo.txt"
+extra_base_dirs = ["../my-addon", "../shared-content"]
 type = "all"
 verbose = true
 ```
 
 With this file next to the executable, `source-analyzer map test.bsp -p` loads
 the `ez2` profile. Use `-p ez2` to select it explicitly. `type` accepts `all`,
-`missing`, or `present`; profiles may also set `base_dir`.
+`missing`, or `present`; profiles may also set `base_dir` and an
+`extra_base_dirs` array. Relative paths are resolved from the profile file.
 
 ## Resolution rules
 
@@ -70,6 +74,7 @@ Wildcard entries are expanded in case-insensitive lexical order.
 
 `|gameinfo_path|` is relative to the directory containing `gameinfo.txt`.
 `|all_source_engine_paths|` and unprefixed paths are relative to `--base-dir`.
+They are then tried against each extra base directory in configured order.
 An explicit `name.vpk` entry also resolves Valve's split `name_dir.vpk` form.
 
 Garry's Mod GMA addons, `mount.cfg`, and runtime game mounts are intentionally
