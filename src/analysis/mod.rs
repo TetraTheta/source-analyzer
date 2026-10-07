@@ -141,10 +141,19 @@ fn selection_allows(selection: Selection, status: AssetStatus) -> bool {
 }
 
 fn print_banner(status: AssetStatus, kind: ResourceKind) {
-  let title = format!("{} {}", status_name(status), category_name(kind));
-  let border = "#".repeat(title.len() + 6);
   let style = status_style(status);
-  println!("{style}{border}\n#  {title}  #\n{border}{style:#}\n");
+  println!("{style}# {} {}{style:#}\n", title_case(status_name(status)), title_case(category_name(kind)));
+}
+
+fn title_case(value: &str) -> String {
+  value
+    .split_whitespace()
+    .map(|word| {
+      let mut characters = word.chars();
+      characters.next().map(|first| first.to_uppercase().chain(characters.flat_map(char::to_lowercase)).collect::<String>()).unwrap_or_default()
+    })
+    .collect::<Vec<_>>()
+    .join(" ")
 }
 
 fn status_style(status: AssetStatus) -> Style {
@@ -183,22 +192,4 @@ fn type_name(kind: ResourceKind) -> &'static str {
 }
 
 #[cfg(test)]
-mod tests {
-  use super::{Selection, selection_allows, status_style};
-  use crate::output;
-  use crate::source_fs::AssetStatus;
-
-  #[test]
-  fn present_selection_includes_embedded_assets() {
-    assert!(selection_allows(Selection::Present, AssetStatus::Present));
-    assert!(selection_allows(Selection::Present, AssetStatus::Embedded));
-    assert!(!selection_allows(Selection::Present, AssetStatus::Missing));
-  }
-
-  #[test]
-  fn report_status_colors_follow_severity() {
-    assert_eq!(status_style(AssetStatus::Missing), output::ERROR);
-    assert_eq!(status_style(AssetStatus::Embedded), output::EMBEDDED);
-    assert_eq!(status_style(AssetStatus::Present), output::PRESENT);
-  }
-}
+mod tests;

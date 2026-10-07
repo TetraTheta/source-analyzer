@@ -152,7 +152,7 @@ fn parse_entities(data: &[u8], assets: &mut MapAssets) -> Result<()> {
       assets.particles.insert(particle_path(value));
     } else if is_model_key(key) && lower.starts_with("models/") {
       assets.models.insert(model_path(&format!("{value}.mdl")));
-    } else if is_material_key(key) && !value.is_empty() {
+    } else if is_material_key(key) && !value.is_empty() && value.parse::<u32>().is_err() {
       assets.materials.insert(material_path(value));
     }
   }
@@ -247,13 +247,4 @@ fn read_u16(bytes: &[u8], offset: usize) -> Result<u16> {
 }
 
 #[cfg(test)]
-mod tests {
-  use super::{model_path, quoted_tokens};
-
-  #[test]
-  fn entity_tokenizer_keeps_key_value_order() {
-    let tokens = quoted_tokens(r#"{ "classname" "prop_dynamic" "model" "models\props\a.mdl" }"#);
-    assert_eq!(tokens, ["classname", "prop_dynamic", "model", r"models\props\a.mdl"]);
-    assert_eq!(model_path(&tokens[3]), "models/props/a.mdl");
-  }
-}
+mod tests;

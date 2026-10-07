@@ -1,3 +1,5 @@
+mod gmod;
+
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{Cursor, Read};
@@ -54,6 +56,16 @@ pub struct SourceFs {
 
 impl SourceFs {
   pub fn from_gameinfo(gameinfo_path: &Path, base_dir: Option<&Path>, extra_base_dirs: &[PathBuf], verbose: bool) -> Result<Self> {
+    Self::from_gameinfo_excluding(gameinfo_path, base_dir, extra_base_dirs, None, verbose)
+  }
+
+  pub fn from_gameinfo_excluding(
+    gameinfo_path: &Path,
+    base_dir: Option<&Path>,
+    extra_base_dirs: &[PathBuf],
+    excluded_root: Option<&Path>,
+    verbose: bool,
+  ) -> Result<Self> {
     let text = fs::read_to_string(gameinfo_path).with_context(|| format!("failed to read {}", gameinfo_path.display()))?;
     let root = Parser::new(&text).numeric_inference(false).parse().context("failed to parse gameinfo.txt as Valve KeyValues1")?;
     let file_system = find_compound(&root, "FileSystem")?;
@@ -72,6 +84,7 @@ impl SourceFs {
 
     let mut roots = Vec::new();
     let mut seen = HashSet::new();
+    let excluded_root = excluded_root.map(canonical_path_key);
     for entry in search_paths {
       if !entry.name.split('+').any(|id| id.trim().eq_ignore_ascii_case("game")) {
         continue;
@@ -81,6 +94,9 @@ impl SourceFs {
       };
       let candidates = resolve_search_paths(value, gameinfo_dir, base_dir, extra_base_dirs)?;
       for candidate in candidates {
+        if excluded_root.as_ref().is_some_and(|excluded| canonical_path_key(&candidate) == *excluded) {
+          continue;
+        }
         if candidate.is_dir() {
           let key = path_key(&candidate);
           if seen.insert(key) {
@@ -109,11 +125,28 @@ impl SourceFs {
       }
     }
 
+    for extra_base_dir in extra_base_dirs {
+      if excluded_root.as_ref().is_some_and(|excluded| canonical_path_key(extra_base_dir) == *excluded) || !extra_base_dir.is_dir() {
+        continue;
+      }
+      if seen.insert(path_key(extra_base_dir)) {
+        if verbose {
+          output::info(format_args!("Mounted extra content path: {}", extra_base_dir.display()));
+        }
+        roots.push(SearchRoot::Loose(extra_base_dir.clone()));
+      }
+    }
+
+    if find_value(file_system, "SteamAppId").is_some_and(|value| value == "4000") {
+      gmod::add_mounts(gameinfo_dir, &mut roots, &mut seen, excluded_root.as_deref(), verbose)?;
+    }
+
     Ok(Self { embedded: None, roots, verbose })
   }
 
   pub fn set_embedded_pak(&mut self, bytes: Vec<u8>) -> Result<()> {
     if bytes.is_empty() {
+      self.embedded = None;
       return Ok(());
     }
     let mut archive = ZipArchive::new(Cursor::new(bytes.as_slice())).context("failed to parse BSP embedded pakfile")?;
@@ -202,6 +235,9 @@ fn read_limited(path: &Path) -> Result<Vec<u8>> {
 }
 
 fn find_compound<'a>(entry: &'a KvEntry<'a>, name: &str) -> Result<&'a [KvEntry<'a>]> {
+  if entry.name.eq_ignore_ascii_case(name) {
+    return entry.data.as_compound().with_context(|| format!("{name} is not a KeyValues object"));
+  }
   let entries = entry.data.as_compound().with_context(|| format!("{} is not a KeyValues object", entry.name))?;
   find_child_compound(entries, name)
 }
@@ -211,7 +247,11 @@ fn find_child_compound<'a>(entries: &'a [KvEntry<'a>], name: &str) -> Result<&'a
     .iter()
     .find(|child| child.name.eq_ignore_ascii_case(name))
     .and_then(|child| child.data.as_compound())
-    .with_context(|| format!("gameinfo.txt is missing {name}"))
+    .with_context(|| format!("KeyValues object is missing {name}"))
+}
+
+fn find_value<'a>(entries: &'a [KvEntry<'a>], name: &str) -> Option<&'a str> {
+  entries.iter().find(|child| child.name.eq_ignore_ascii_case(name)).and_then(|child| child.data.as_str())
 }
 
 fn resolve_search_path(value: &str, gameinfo_dir: &Path, base_dir: &Path) -> Result<Vec<PathBuf>> {
@@ -276,7 +316,7 @@ fn expand_wildcards(base: &Path, relative: &str) -> Result<Vec<PathBuf>> {
   Ok(paths.into_iter().filter(|path| path.is_dir() || is_vpk_path(path)).collect())
 }
 
-fn wildcard_matches(pattern: &str, value: &str) -> bool {
+pub(crate) fn wildcard_matches(pattern: &str, value: &str) -> bool {
   let pattern = pattern.as_bytes();
   let value = value.as_bytes();
   let (mut p, mut v, mut star, mut retry) = (0, 0, None, 0);
@@ -326,30 +366,9 @@ fn path_key(path: &Path) -> String {
   path.to_string_lossy().replace('\\', "/").to_ascii_lowercase()
 }
 
-#[cfg(test)]
-mod tests {
-  use std::fs;
-
-  use super::{resolve_search_paths, wildcard_matches};
-
-  #[test]
-  fn wildcard_matching_is_case_insensitive() {
-    assert!(wildcard_matches("*.VPK", "pak01_dir.vpk"));
-    assert!(wildcard_matches("addon_?", "ADDON_1"));
-    assert!(!wildcard_matches("*.vpk", "materials"));
-  }
-
-  #[test]
-  fn search_paths_use_primary_then_extra_base_dirs() {
-    let temp = std::env::temp_dir().join(format!("source-analyzer-{}", std::process::id()));
-    let primary = temp.join("primary");
-    let extra = temp.join("extra");
-    fs::create_dir_all(primary.join("game")).expect("primary search path should be created");
-    fs::create_dir_all(extra.join("game")).expect("extra search path should be created");
-
-    let paths = resolve_search_paths("game", &temp, &primary, std::slice::from_ref(&extra)).expect("search paths should resolve");
-
-    assert_eq!(paths, [primary.join("game"), extra.join("game")]);
-    fs::remove_dir_all(&temp).expect("temporary search paths should be removed");
-  }
+fn canonical_path_key(path: &Path) -> String {
+  path_key(&fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf()))
 }
+
+#[cfg(test)]
+mod tests;

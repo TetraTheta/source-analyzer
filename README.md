@@ -20,6 +20,7 @@ cargo build --release
 ```console
 source-analyzer map <BSP> [OPTIONS]
 source-analyzer model <MDL> [OPTIONS]
+source-analyzer clean [TARGET_DIR] [OPTIONS]
 ```
 
 Options shared by both commands:
@@ -31,12 +32,26 @@ Options shared by both commands:
 - `--base-dir <PATH>`: directory used for unprefixed and
   `|all_source_engine_paths|` entries. By default this is inferred as the parent
   of the directory containing `gameinfo.txt`.
-- `-B, --extra-base-dir <PATH>`: additional directory used to resolve those same
-  entries after the primary base directory. May be repeated.
+- `-B, --extra-base-dir <PATH>`: additional directory mounted as loose content
+  and used to resolve those same entries after the primary base directory. May
+  be repeated.
 - `--missing`: print missing dependencies only.
 - `--present`: print present and BSP-embedded dependencies only.
 - `--all`: print all dependencies. This is the default.
 - `-v, --verbose`: print mount and analysis progress to stderr.
+
+Cleanup-only options:
+
+- `--unused`: also select loose material and model files that are not referenced
+  by any `maps/*.bsp` file. Lua, gamemode, console, and other runtime references
+  are not analyzed.
+- `--delete`: apply the cleanup. By default, files are moved to `.materials`
+  and `.models` directories under the target directory.
+- `--no-backup`: permanently delete selected files. This requires `--delete`.
+- `--keep <PATTERN>`: preserve paths matching a case-insensitive `*`/`?`
+  wildcard and skip their dependency inspection. May be repeated. Transitive
+  dependencies of a skipped resource cannot be discovered, so keep those paths
+  explicitly when applying `--delete`.
 
 Example:
 
@@ -58,12 +73,21 @@ gameinfo = "../EntropyZero2/ez2/gameinfo.txt"
 extra_base_dirs = ["../my-addon", "../shared-content"]
 type = "all"
 verbose = true
+
+[preset.port]
+gameinfo = "../GarrysMod/garrysmod/gameinfo.txt"
+target = "../my-addon"
+keep = ["materials/ui/*", "models/player/*"]
+unused = true
+delete = false
+no_backup = false
 ```
 
 With this file next to the executable, `source-analyzer map test.bsp -p` loads
 the `ez2` profile. Use `-p ez2` to select it explicitly. `type` accepts `all`,
 `missing`, or `present`; profiles may also set `base_dir` and an
-`extra_base_dirs` array. Relative paths are resolved from the profile file.
+`extra_base_dirs` array. Cleanup profiles may set `target`, `keep`, `unused`,
+`delete`, and `no_backup`. Relative paths are resolved from the profile file.
 
 ## Resolution rules
 
@@ -75,11 +99,13 @@ Wildcard entries are expanded in case-insensitive lexical order.
 `|gameinfo_path|` is relative to the directory containing `gameinfo.txt`.
 `|all_source_engine_paths|` and unprefixed paths are relative to `--base-dir`.
 They are then tried against each extra base directory in configured order.
+Each extra base directory is also mounted directly as a loose content root.
 An explicit `name.vpk` entry also resolves Valve's split `name_dir.vpk` form.
 
-Garry's Mod GMA addons, `mount.cfg`, and runtime game mounts are intentionally
-outside the scope of the resolver. An ordinary directory explicitly listed in
-`SearchPaths` is still handled.
+For a Garry's Mod `gameinfo.txt` (`SteamAppId` 4000), enabled content from
+`cfg/mount.cfg` and `cfg/mountdepots.txt` is added after ordinary SearchPaths.
+Installed depot directories are located through Steam's `libraryfolders.vdf`.
+GMA addons and mounts added only at runtime remain outside the resolver.
 
 ## Analysis scope
 
@@ -112,12 +138,16 @@ category (`MAP MATERIAL`, `MAP MODEL`, `MODEL MATERIAL`, `MAP SOUND`, and
 `MAP PARTICLE`). Empty groups are omitted.
 
 ```text
-############################
-#  PRESENT MODEL MATERIAL  #
-############################
+# Present Model Material
 
 [PRESENT ] [MATERIAL] materials/models/props/barrel.vmt  [vpk: hl2_misc_dir.vpk]
 ```
+
+Cleanup reports use the same heading format, for example `# Duplicate
+Material` and `# Unused Model`. Model sidecar files are treated as one family:
+a duplicate family is selected only when every loose member matches, and a
+referenced `.mdl` preserves its sidecars. Backup cleanup moves files while
+preserving their paths under `.materials` or `.models`.
 
 The process exits with `0` after a successful analysis, `1` for an input or
 analysis error, and clap's standard `2` for invalid command-line arguments.
