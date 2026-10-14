@@ -124,8 +124,10 @@ fn is_texture_key(name: &str) -> bool {
       | "$iris"
       | "$lightwarptexture"
       | "$normalmap"
+      | "$parallaxmap"
       | "$phongexponenttexture"
       | "$selfillummask"
+      | "$texture2"
       | "%tooltexture"
   )
 }

@@ -10,9 +10,12 @@ fn vmt_comparison_normalizes_keys_paths_order_and_numbers() {
 
 #[test]
 fn dependencies_include_materials_and_textures() {
-  let vmt = br#"Patch { "include" "Base/Foo" "insert" { "$bumpmap" "Detail/Normal" } }"#;
+  let vmt = br#"Patch { "include" "Base/Foo" "insert" { "$bumpmap" "Detail/Normal" "$parallaxmap" "Detail/Height" "$texture2" "Detail/Mask" } }"#;
 
-  assert_eq!(dependencies(vmt).expect("VMT should parse"), ["materials/base/foo.vmt", "materials/detail/normal.vtf"]);
+  assert_eq!(
+    dependencies(vmt).expect("VMT should parse"),
+    ["materials/base/foo.vmt", "materials/detail/height.vtf", "materials/detail/mask.vtf", "materials/detail/normal.vtf"]
+  );
 }
 
 #[test]
