@@ -6,6 +6,7 @@ use_field_init_shorthand = true
 use_small_heuristics = "Max"
 use_try_shorthand = true
 # nightly features
+unstable_features = true
 comment_width = 150
 condense_wildcard_suffixes = true
 format_code_in_doc_comments = true
