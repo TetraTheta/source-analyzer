@@ -54,7 +54,7 @@ pub(crate) struct AnalysisOptions {
 pub(crate) struct CleanupOptions {
   #[command(flatten)]
   pub(crate) source: SourceOptions,
-  /// Also select files unused by every maps/*.bsp map. Runtime code references are not analyzed.
+  /// Also select files unused by every parseable maps/*.bsp map. Runtime code references are not analyzed.
   #[arg(long)]
   pub(crate) unused: bool,
   /// Apply the cleanup. Files are moved to .materials and .models backup directories by default.

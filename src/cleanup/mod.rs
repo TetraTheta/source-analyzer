@@ -133,7 +133,13 @@ fn used_files(target: &Path, source_fs: &mut SourceFs, keep: &[String], verbose:
       output::info(format_args!("Analyzing cleanup dependencies: {}", map.display()));
     }
     let bytes = fs::read(&map).with_context(|| format!("failed to read {}", map.display()))?;
-    let assets = bsp::parse(&bytes).with_context(|| format!("failed to parse {}", map.display()))?;
+    let assets = match bsp::parse(&bytes) {
+      Ok(assets) => assets,
+      Err(error) => {
+        output::warning(format_args!("Skipping map that could not be parsed: {}: {error:#}", map.display()));
+        continue;
+      },
+    };
     source_fs.set_embedded_pak(assets.pakfile)?;
     let mut queue = VecDeque::new();
     queue.extend(assets.materials);

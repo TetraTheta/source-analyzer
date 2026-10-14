@@ -15,3 +15,13 @@ fn numeric_material_properties_are_not_asset_paths() {
 
   assert_eq!(assets.materials, ["materials/decals/poster.vmt".to_owned()].into());
 }
+
+#[test]
+fn non_utf8_entity_value_does_not_abort_asset_discovery() {
+  let mut assets = MapAssets::default();
+
+  parse_entities(b"{ \"command\" \"map_background \x94arena\x94\" \"model\" \"models/props/crate.mdl\" }", &mut assets)
+    .expect("entities should parse");
+
+  assert_eq!(assets.models, ["models/props/crate.mdl".to_owned()].into());
+}

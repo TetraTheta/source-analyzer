@@ -136,8 +136,8 @@ fn parse_model_dictionary(data: &[u8], models: &mut BTreeSet<String>) -> Result<
 }
 
 fn parse_entities(data: &[u8], assets: &mut MapAssets) -> Result<()> {
-  let text = std::str::from_utf8(data.strip_suffix(&[0]).unwrap_or(data)).context("BSP entity lump is not UTF-8")?;
-  let tokens = quoted_tokens(text);
+  let text = String::from_utf8_lossy(data.strip_suffix(&[0]).unwrap_or(data));
+  let tokens = quoted_tokens(&text);
   for pair in tokens.as_chunks::<2>().0 {
     let key = pair[0].as_str();
     let value = pair[1].trim();
